@@ -1,555 +1,402 @@
-👁️ FocusSense
+# 👁️ FocusSense
 
-Smart Study Monitoring & Drowsiness Detection System
+### Smart Study Monitoring & Drowsiness Detection System
 
-FocusSense is a smart study monitoring system designed to help students maintain focus during study sessions. It uses computer vision and eye-rate analysis to monitor the user's eye activity in real time, identify signs of drowsiness, and provide audio alerts when the user appears to be losing focus.
+FocusSense is a smart study monitoring system designed to help students maintain focus during study sessions. It uses your webcam and MediaPipe's face landmark tracking to watch two independent signs of lost focus in real time — **drowsy eyes** and **a distracted head pose** — and plays an audio alert when either is sustained for too long.
 
-📌 Overview
+---
+
+## 📌 Overview
 
 Staying focused during long study sessions can be challenging, especially when fatigue and drowsiness begin to affect concentration.
 
-FocusSense addresses this problem by using a laptop camera to continuously observe the user's face and eyes while studying. The system analyzes eye activity and determines whether the user is actively studying or showing signs of sleepiness.
+**FocusSense** addresses this by using your webcam to continuously track facial landmarks while you study. It analyzes:
 
-When prolonged eye closure or drowsiness is detected, FocusSense plays an audio alert to bring the user's attention back to their studies.
+- How closed your eyes are (via **Eye Aspect Ratio**)
+- Which way your head is turned or tilted (via **head-pose yaw/pitch**)
 
-✨ Features
+When either condition is sustained past a threshold, FocusSense plays a distinct audio alert to bring your attention back to your studies.
 
-👁️ Real-Time Eye Monitoring
-Monitors eye activity through the webcam.
+---
 
-📊 Eye-Rate Analysis
-Uses eye-related measurements to determine the user's attention state.
+## ✨ Features
 
-😴 Drowsiness Detection
-Detects prolonged eye closure and signs of sleepiness.
+- 👁️ **Real-Time Eye Monitoring** — tracks eye landmarks through the webcam every frame.
+- 📊 **Eye Aspect Ratio (EAR) Analysis** — a well-established geometric formula for detecting eye closure from landmark positions.
+- 😴 **Drowsiness Detection** — flags sustained eye closure using a consecutive-frame counter, so a normal blink never triggers a false alert.
+- 🙃 **Distraction Detection** — extracts yaw/pitch from MediaPipe's facial transformation matrix to detect when you've turned or tilted away from the screen.
+- 🔊 **Independent Audio Alerts** — separate sounds and cooldowns for drowsiness vs. distraction, so alerts don't spam you.
+- 🖥️ **Live On-Screen Overlay** — shows current status, EAR value, and yaw/pitch angles in real time.
+- ⏳ **Hold Periods** — both states stay "active" briefly after the trigger clears, avoiding flicker.
+- 📈 **Session Summary** — prints total duration and alert counts to the terminal when you quit.
+- 🎓 **Student-Focused** — built specifically to support self-study and long learning sessions.
 
-🔊 Audio Alerts
-Plays an alert when the system detects that the user may be falling asleep.
+---
 
-🎥 Webcam-Based Monitoring
-Works with a standard laptop or external webcam.
+## 🧠 How It Works
 
-⚡ Real-Time Processing
-Processes camera input continuously during a study session.
-
-🎓 Student-Focused
-Designed specifically to support students during self-study and long learning sessions.
-
-🧠 How It Works
-
-FocusSense follows a real-time monitoring pipeline:
-
+```text
         ┌─────────────────┐
         │   Webcam Input  │
         └────────┬────────┘
-                 │
-                 ▼
-        ┌─────────────────┐
-        │  Face Detection │
-        └────────┬────────┘
-                 │
-                 ▼
-        ┌─────────────────┐
-        │  Eye Detection  │
-        └────────┬────────┘
-                 │
-                 ▼
-        ┌─────────────────┐
-        │ Eye-Rate / Eye  │
-        │ Activity Analysis│
-        └────────┬────────┘
-                 │
-          ┌──────┴──────┐
-          │             │
-          ▼             ▼
-      Focused       Drowsy
-          │             │
-          │             ▼
-          │       🔊 Audio Alert
-          │
-          ▼
-      Continue Studying
-
-Detection Process
-
-The webcam captures the user's face.
-
-The system identifies the eyes.
-
-Eye activity is analyzed continuously.
-
-The system checks for prolonged eye closure or reduced eye activity.
-
-If drowsiness is detected, an audio alert is triggered.
-
-The user can regain attention and continue studying.
-
-🔄 System Workflow
-
-Start
-  │
-  ▼
-Initialize Camera
-  │
-  ▼
-Capture Video Frame
-  │
-  ▼
-Detect Face
-  │
-  ▼
-Detect / Track Eyes
-  │
-  ▼
-Calculate Eye Activity
-  │
-  ├───────────────┐
-  │               │
-  ▼               ▼
-Normal Activity   Prolonged Eye Closure
-  │               │
-  ▼               ▼
-Continue          Drowsiness Detected
-Monitoring        │
-                  ▼
-             Play Audio Alert
                   │
                   ▼
-             Resume Monitoring
+        ┌─────────────────────────┐
+        │ MediaPipe FaceLandmarker │
+        │ (landmarks + transform)  │
+        └────────┬─────────────────┘
+                  │
+        ┌─────────┴─────────┐
+        ▼                   ▼
+┌───────────────┐   ┌─────────────────┐
+│  Eye Landmarks │   │ Transformation  │
+│  → EAR calc    │   │ Matrix → Yaw/   │
+│                │   │ Pitch (Euler)   │
+└───────┬────────┘   └────────┬────────┘
+        │                     │
+        ▼                     ▼
+   EAR < threshold?      Yaw/Pitch >
+   (N consec. frames)    threshold?
+        │                     │
+   ┌────┴────┐           ┌────┴────┐
+   ▼         ▼           ▼         ▼
+ Drowsy   Normal    Distracted  Focused
+   │                     │
+   ▼                     ▼
+🔊 Drowsy Alert     🔊 Focus Alert
+```
 
-🛠️ Technologies Used
+### Detection Process
 
-Technology
+1. The webcam captures a frame; MediaPipe's **FaceLandmarker** returns facial landmarks and a 3D transformation matrix.
+2. **Drowsiness**: 6 landmark points per eye are used to compute the Eye Aspect Ratio (vertical eye distances over horizontal eye distance). A low EAR sustained over a configurable number of consecutive frames confirms drowsiness.
+3. **Distraction**: The rotation component of the transformation matrix is converted into yaw/pitch (Euler angles). Sustained off-angle values confirm distraction.
+4. If either condition is confirmed, its matching `.wav` alert plays — respecting a per-alert cooldown so it doesn't fire every frame.
+5. The on-screen overlay updates live with status text, EAR, and yaw/pitch values.
+6. On quit (`q`), a session summary prints: duration, drowsiness alerts, and distraction alerts.
 
-Purpose
+---
 
-Python
+## 🛠️ Technologies Used
 
-Core programming language
+| Technology | Purpose |
+|---|---|
+| **Python** | Core programming language |
+| **OpenCV** | Webcam capture, frame drawing, display window |
+| **MediaPipe** | Face landmark detection & head-pose transformation matrix |
+| **NumPy** | Rotation matrix → Euler angle math |
+| **winsound** *(built-in, Windows)* | Asynchronous alert playback |
 
-OpenCV
+> ⚠️ **Windows only** — the current audio playback uses Python's built-in `winsound` module. See [Cross-Platform Note](#-cross-platform-note) to run on macOS/Linux.
 
-Computer vision and webcam processing
+---
 
-NumPy
+## 📂 Project Structure
 
-Numerical calculations and data processing
+```text
+FocusSense/
+│
+├── smart_study_monitor.py   # main script — run this
+├── face_landmarker.task     # MediaPipe model (auto-downloaded on first run)
+├── get_up.wav               # drowsiness alert sound
+├── stay_focused.wav           # distraction alert sound
+├── requirements.txt
+└── .gitignore
+```
 
-Computer Vision
+All four core files (script, model, and both `.wav` files) must live in the **same folder** — the script resolves paths relative to its own location.
 
-Face and eye monitoring
+---
 
-Webcam
+## ⚙️ Installation & Setup
 
-Real-time video input
+### 1. Clone the Repository
 
-Audio Processing
+```bash
+git clone https://github.com/vipin-soni01/Study-Monitoring-.git
+cd Study-Monitoring-
+```
 
-Drowsiness alert system
+### 2. Create a Virtual Environment
 
-
-⚙️ Installation & Setup
-
-1. Clone the Repository
-
-git clone https://github.com/YOUR-USERNAME/FocusSense.git
-
-2. Navigate to the Project
-
-cd FocusSense
-
-3. Create a Virtual Environment
-
+```bash
 python -m venv .venv
+```
 
-4. Activate the Virtual Environment
+### 3. Activate the Virtual Environment
 
-Windows
-
+**Windows**
+```bash
 .venv\Scripts\activate
+```
 
-Linux / macOS
-
+**Linux / macOS**
+```bash
 source .venv/bin/activate
+```
 
-5. Install Dependencies
+### 4. Install Dependencies
 
+```bash
+pip install opencv-python mediapipe numpy
+```
+
+Or, if using `requirements.txt`:
+
+```bash
 pip install -r requirements.txt
+```
 
-▶️ How to Run
+---
 
-After installing the dependencies, start FocusSense with:
+## ▶️ How to Run
 
+```bash
 python smart_study_monitor.py
+```
 
 Make sure that:
 
-Your webcam is connected.
+- Your webcam is connected and not in use by another app.
+- Camera permissions are enabled for your terminal/IDE.
+- `face_landmarker.task`, `uth_jaa.wav`, and `focus_alert.wav` are present next to the script (the model auto-downloads on first run if missing).
 
-Camera permissions are enabled.
+**Controls:** press `q` to quit and print a session summary.
 
-Your environment has all required Python packages installed.
+---
 
-The required audio assets are available in the expected location.
+## 🔊 Audio Alert System
 
-🔊 Audio Alert System
+FocusSense plays a distinct audio warning for each detected state:
 
-FocusSense provides an audio warning when prolonged eye closure or drowsiness is detected.
+- 😴 A **drowsiness alert** when eyes stay closed too long.
+- 🙃 A **distraction alert** when your head turns or tilts away from the screen too long.
 
-The alert system is designed to:
+Each alert has its own cooldown to avoid spamming you while the condition persists.
 
-Grab the user's attention.
+---
 
-Reduce extended periods of sleepiness.
+## ⚙️ Configuration
 
-Encourage the student to return their focus to studying.
+Key thresholds live at the top of `smart_study_monitor.py` and can be tuned for your face, camera, and lighting:
 
-Provide immediate feedback during a study session.
+```python
+# --- Drowsiness detection (EAR) ---
+EAR_THRESHOLD = 0.21            # below this = eyes considered "closed"
+DROWSY_CONSEC_FRAMES = 20       # consecutive low-EAR frames to confirm drowsiness
+DROWSY_HOLD_SECONDS = 2.5       # how long "DROWSY" stays on screen after eyes reopen
+DROWSY_ALERT_COOLDOWN = 4.0     # min seconds between repeated drowsy alerts
 
-🎯 Objective
+# --- Distraction detection (head pose) ---
+YAW_THRESHOLD = 25              # degrees of left/right turn allowed
+PITCH_THRESHOLD = 20            # degrees of up/down tilt allowed
+DISTRACTED_CONSEC_FRAMES = 25   # consecutive off-angle frames to confirm distraction
+DISTRACTED_HOLD_SECONDS = 2.5   # how long "DISTRACTED" stays on screen
+FOCUS_ALERT_COOLDOWN = 4.0      # min seconds between repeated distraction alerts
+```
 
-The main objective of FocusSense is to create a simple and practical tool that helps students maintain concentration during study sessions.
+---
 
-The project focuses on:
+## 🎯 Objective
 
-Monitoring study behavior.
+The main objective of FocusSense is to create a simple, practical tool that helps students maintain concentration during study sessions by:
 
-Detecting signs of drowsiness.
+- Monitoring eye and head activity in real time.
+- Detecting signs of drowsiness and distraction independently.
+- Providing timely audio feedback.
+- Encouraging productive study habits.
+- Demonstrating a practical, local-first computer vision application.
 
-Providing timely feedback.
+---
 
-Encouraging productive study habits.
+## 💡 Why FocusSense?
 
-Demonstrating a practical application of computer vision.
+Traditional study timers can tell you **how long** you've been sitting at your desk — but not whether you're actually paying attention.
 
-💡 Why FocusSense?
+FocusSense introduces real-time monitoring of both **eye state** and **head orientation**, giving a more complete picture of engagement than a timer alone.
 
-Long study sessions can lead to fatigue, reduced attention, and unintentional sleep.
+---
 
-Traditional study timers can tell a student how long they have been studying, but they cannot determine whether the student is actually maintaining attention.
+## 🔐 Privacy
 
-FocusSense introduces a real-time monitoring approach by observing eye activity and providing an alert when signs of drowsiness are detected.
-
-📊 Possible Study States
-
-FocusSense can conceptually identify two primary states:
-
-🟢 Focused / Active
-
-The user's eyes show normal activity and the system continues monitoring without triggering an alert.
-
-🔴 Drowsy / Sleeping
-
-The system detects prolonged eye closure or reduced eye activity and triggers an audio warning.
-
-Detection accuracy can vary depending on lighting, camera quality, face position, glasses, and other environmental conditions.
-
-🔐 Privacy
-
-FocusSense is designed around webcam-based local monitoring.
-
-The camera is used to analyze the user's study session, and the project does not require uploading camera footage to an external server.
+FocusSense runs entirely **locally** — no camera footage or landmark data is uploaded anywhere.
 
 For privacy and security:
 
-Camera data should be handled locally.
+- Camera data is processed locally, frame by frame, and never saved by default.
+- Don't upload personal recordings to public repositories.
+- Keep private configuration files out of Git.
+- Review `.gitignore` before pushing the project to GitHub.
 
-Do not upload personal recordings to public repositories.
+---
 
-Keep private configuration files out of Git.
 
-Review .gitignore before pushing the project to GitHub.
 
-📸 Screenshots
+- 📷 Webcam monitoring screen
+- 👁️ EAR overlay + eye landmarks
+- 🟢 Focused state
+- 😴 Drowsiness alert state
+- 🙃 Distraction alert state
 
-Add screenshots of the application here.
+---
 
-For example:
 
-![FocusSense Monitoring](assets/screenshot.png)
+## 🎓 Learning Outcomes
 
-Recommended screenshots:
+Building FocusSense covers:
 
-📷 Webcam monitoring screen
+- Python programming
+- Computer vision fundamentals (MediaPipe, OpenCV)
+- Real-time webcam processing
+- Facial landmark detection & geometric feature extraction (EAR)
+- Rotation matrix → Euler angle conversion
+- Audio alert integration
+- Real-time application development
+- Debugging and project organization
+- Git and GitHub workflow
 
-👁️ Face and eye detection
+---
 
-🟢 Focused state
+## 🚀 Future Improvements
 
-😴 Drowsiness detection
+- [ ] **Cross-platform audio** — replace `winsound` with `playsound` or `simpleaudio`
+- [ ] **Configurable thresholds** via a config file or CLI args
+- [ ] **Session logging** to CSV for tracking focus trends over time
+- [ ] **Desktop notifications** as an alternative/addition to sound alerts
+- [ ] **Productivity dashboard** with charts of focus/distraction over time
+- [ ] **Customizable alerts** — sound, volume, sensitivity, duration
+- [ ] **Graphical User Interface** showing camera feed, timer, and alert history
+- [ ] **Low-light support** improvements
+- [ ] **Daily & weekly reports**
+- [ ] **Multi-face handling** / webcam selection
 
-🔊 Audio alert state
+---
 
-🎥 Demo
+## ⚠️ Limitations
 
-You can add a demonstration video or GIF of FocusSense working in real time.
+FocusSense is a monitoring and educational project — treat it as a productivity aid, not a medical or diagnostic tool. Performance can be affected by:
 
-Example:
+- Poor lighting
+- Low-quality cameras
+- Face partially outside the camera frame
+- Large or rapid head movements
+- Glasses or reflections
+- Multiple people in frame
+- Camera permission issues
 
-![FocusSense Demo](assets/demo.gif)
+---
 
-You can also add a YouTube or project demonstration link here:
+## 🧪 Testing
 
-Demo: YOUR-DEMO-LINK
+Before a study session, verify that:
 
-🎓 Learning Outcomes
+- The webcam is detected correctly.
+- Your face is visible and well-lit.
+- EAR and yaw/pitch values respond sensibly to blinking/turning.
+- Both audio alerts play correctly.
+- Required dependencies are installed.
+- The application runs continuously without errors.
 
-Developing FocusSense provides practical experience with:
+---
 
-Python programming
+## 🧰 Troubleshooting
 
-Computer vision fundamentals
+### Camera is not opening
 
-Real-time webcam processing
+- Check whether another app is using the webcam.
+- Confirm camera permissions are enabled.
+- Confirm the correct camera index is being used (`cv2.VideoCapture(0)` by default).
 
-Face detection
+### Model download fails
 
-Eye detection
+- Check your internet connection.
+- Manually download the model from the URL printed in the console and place it next to the script as `face_landmarker.task`.
 
-Image processing
+### Audio alert is not playing
 
-Eye activity analysis
+- Confirm `uth_jaa.wav` and `focus_alert.wav` exist next to the script (the console will warn if missing).
+- Confirm your system volume is enabled.
+- On non-Windows systems, swap `winsound` for a cross-platform library (see below).
 
-Audio alert integration
+### Eye/head detection is inaccurate
 
-Working with external Python libraries
+- Improve room lighting.
+- Sit directly in front of the camera.
+- Keep your face fully within frame.
+- Adjust `EAR_THRESHOLD`, `YAW_THRESHOLD`, or `PITCH_THRESHOLD` in the config section.
 
-Real-time application development
+---
 
-Debugging and project organization
+## 🌍 Cross-Platform Note
 
-Git and GitHub workflow
+Alert playback currently uses `winsound`, which is **Windows-only**. To run on macOS/Linux:
 
-🚀 Future Improvements
+```bash
+pip install playsound
+```
 
-Future versions of FocusSense could include:
+```python
+from playsound import playsound
 
-📈 Study Analytics
+def play_sound(path):
+    playsound(path, block=False)
+```
 
-Store and visualize study-session information such as:
+---
 
-Total study time
-
-Focused time
-
-Drowsiness events
-
-Number of alerts
-
-Daily productivity
-
-⏱️ Automatic Session Tracking
-
-Automatically start and stop study sessions and calculate useful statistics.
-
-📊 Productivity Dashboard
-
-Add charts and graphs to help students understand their study patterns.
-
-💤 Improved Drowsiness Detection
-
-Improve detection reliability under different:
-
-Lighting conditions
-
-Camera angles
-
-Face positions
-
-User environments
-
-🔔 Customizable Alerts
-
-Allow users to select:
-
-Alert sounds
-
-Alert volume
-
-Alert sensitivity
-
-Alert duration
-
-🖥️ Graphical User Interface
-
-Create a dedicated interface displaying:
-
-Camera feed
-
-Current status
-
-Study timer
-
-Focus statistics
-
-Alert history
-
-🌙 Low-Light Support
-
-Improve monitoring performance when the user is studying in low-light conditions.
-
-📅 Daily & Weekly Reports
-
-Generate reports showing study patterns and focus trends.
-
-☁️ Study History
-
-Optionally store study statistics for long-term progress tracking.
-
-⚠️ Limitations
-
-FocusSense is a monitoring and educational project, so its results may not always be accurate.
-
-Performance can be affected by:
-
-Poor lighting
-
-Low-quality cameras
-
-Face partially outside the camera frame
-
-Large changes in head position
-
-Glasses or reflections
-
-Multiple people appearing in the frame
-
-Camera permission issues
-
-The system should be treated as a productivity aid rather than a medical or diagnostic tool.
-
-🧪 Testing
-
-Before using the system for a study session, verify that:
-
-The webcam is detected correctly.
-
-Your face is visible to the camera.
-
-Eye detection works under the available lighting.
-
-Audio alerts can be played.
-
-Required dependencies are installed.
-
-The application can run continuously without errors.
-
-🧰 Troubleshooting
-
-Camera is not opening
-
-Check whether:
-
-Another application is using the webcam.
-
-Camera permissions are enabled.
-
-The correct camera index is being used.
-
-Your webcam is properly connected.
-
-Audio alert is not playing
-
-Check whether:
-
-The audio file exists.
-
-The file path is correct.
-
-Your system volume is enabled.
-
-The required audio library is installed.
-
-Eye detection is inaccurate
-
-Try:
-
-Improving room lighting.
-
-Sitting directly in front of the camera.
-
-Keeping your face within the camera frame.
-
-Cleaning the camera lens.
-
-Avoiding strong reflections on glasses.
-
-📌 Project Goals
-
-The project was developed with the following goals:
-
-✓ Monitor study sessions
-✓ Detect eye activity
-✓ Identify signs of drowsiness
-✓ Provide real-time audio feedback
-✓ Encourage better study habits
-✓ Explore practical computer vision applications
-
-🌟 Project Vision
-
-FocusSense aims to make study sessions more interactive by providing real-time awareness of attention and drowsiness.
-
-Instead of simply measuring how long a student sits at their desk, the system focuses on how actively they are engaging with their study session.
-
-The long-term vision is to develop FocusSense into a complete personal productivity assistant for students, combining real-time monitoring with meaningful study analytics and progress tracking.
-
-🤝 Contributing
+## 🤝 Contributing
 
 Contributions are welcome!
 
-If you would like to improve FocusSense:
+1. Fork the repository.
+2. Create a new branch:
+```bash
+   git checkout -b feature/your-feature
+```
+3. Make your changes.
+4. Commit your changes:
+```bash
+   git add .
+   git commit -m "Add your feature"
+```
+5. Push the branch:
+```bash
+   git push origin feature/your-feature
+```
+6. Open a Pull Request.
 
-Fork the repository.
+---
 
-Create a new branch.
+## ⭐ Support
 
-git checkout -b feature/your-feature
+If you find **FocusSense** useful or interesting, consider giving the repository a ⭐ on GitHub — it helps motivate further development.
 
-Make your changes.
+---
 
-Commit your changes.
+## 👨‍💻 Author
 
-git add .
-git commit -m "Add your feature"
+### Vipin Soni
 
-Push the branch.
-
-git push origin feature/your-feature
-
-Open a Pull Request.
-
-⭐ Support
-
-If you find FocusSense useful or interesting, consider giving the repository a ⭐ on GitHub.
-
-Your support helps motivate further development and improvements.
-
-👨‍💻 Author
-
-Vipin Soni
-
-B.Tech Computer Science & Engineering — Artificial Intelligence & Machine Learning
+**B.Tech Computer Science & Engineering — Artificial Intelligence & Machine Learning**
 
 Interested in:
 
-Computer Vision
+- Computer Vision
+- Machine Learning
+- Artificial Intelligence
+- Software Development
+- Full-Stack Development
 
-Machine Learning
+---
 
-Artificial Intelligence
+## 📄 License
 
-Software Development
+This project is created for **educational and learning purposes**. You are welcome to explore, modify, and improve it, following the applicable licensing terms of the repository.
 
-Full-Stack Development
+---
 
-📄 License
+## 🔗 Project
 
-This project is created for educational and learning purposes.
+**FocusSense — Smart Study Monitoring & Drowsiness Detection System**
 
-You are welcome to explore, modify, and improve the project while following the applicable licensing requirements of the repository.
-
-🔗 Project
-
-FocusSense — Smart Study Monitoring & Drowsiness Detection System
-
-Stay focused. Stay consistent. Keep learning. 🚀
+> Stay focused. Stay consistent. Keep learning. 🚀
